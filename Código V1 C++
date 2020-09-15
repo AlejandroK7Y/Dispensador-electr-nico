@@ -1,0 +1,420 @@
+
+#include <LiquidCrystal.h> 
+#include <Wire.h>
+#include "RTClib.h"
+#include "SoftwareSerial.h"  
+#include "DFRobotDFPlayerMini.h"  
+#include <Servo.h>
+#include "HX711.h" 
+#define LOADCELL_DOUT_PIN  A8 
+#define LOADCELL_SCK_PIN  A9  
+
+LiquidCrystal lcd(8, 9, 4, 5, 6, 7);    // Parametros: (rs,enable,d4,d5,d6,d7)
+RTC_DS3231 rtc;     
+Servo myservo;   
+HX711 scale;    
+float calibration_factor = -501; 
+
+int pos = 0;     
+int servoPin = 45;   
+int val;    
+
+DateTime now;   
+byte hour, minute;   
+String h, m;    
+int feedHour = 20; 
+int feedMin = 0;    
+boolean foodTime = true;
+int Echo = 36;            
+int Trig = 34;           
+int distancia, duracion;  
+int led_white1 =12;        
+int led_white2 =13;      
+int led_green =2;       
+int led_red =3;          
+
+SoftwareSerial mySoftwareSerial(10, 11); 
+DFRobotDFPlayerMini myDFPlayer; 
+
+void setup() {         
+  
+  lcd.begin(16, 2);
+  rtc.begin();  
+
+  pinMode(Echo,INPUT);            
+  pinMode(Trig,OUTPUT);           
+  pinMode(led_red,OUTPUT);         
+  pinMode(led_green,OUTPUT);       
+  pinMode(led_white1,OUTPUT);        
+  pinMode(led_white2,OUTPUT);         
+
+  mySoftwareSerial.begin(9600);
+  Serial.begin(115200);
+  
+  if (!myDFPlayer.begin(mySoftwareSerial)) {  
+    Serial.println("ERROR¡¡¡");      
+    while(true); 
+    delay(0);  
+  }
+  
+    Serial.println("Modulo FUNCIONANDO...");     
+    myDFPlayer.volume(25);  
+    myDFPlayer.play(4);  
+
+  Serial.begin(115200);  
+  scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
+  scale.set_scale();
+  scale.tare();  
+  long zero_factor = scale.read_average(); 
+  Serial.print("Zero factor: "); 
+  Serial.println(zero_factor); 
+  
+}
+
+void loop() {           
+
+    long duracion;
+    long distancia;
+    digitalWrite(Trig,LOW);     
+    delayMicroseconds(4);     
+    digitalWrite(Trig,HIGH);    
+    delayMicroseconds(10);
+    digitalWrite(Trig,LOW);
+
+    duracion = pulseIn(Echo,HIGH);  
+    distancia = (duracion/2)/29;   
+
+    Serial.print(distancia);
+    delay(50); 
+
+    digitalWrite(led_green,HIGH);          
+    digitalWrite(led_white1,HIGH);           
+    digitalWrite(led_white2,HIGH);          
+    
+    lcd.print("  BIENVENIDO :)");  
+    delay(5400);      
+    lcd.clear();  
+
+    scale.set_scale(calibration_factor); 
+
+    Serial.print("Lectura: ");
+    Serial.print(scale.get_units(), 1);
+    Serial.print(" Gramos"); //IMPRIME LECTURA EN GRAMOS Y REAJUSTA EL VALOR DE CALIBRACIÓN
+    Serial.print(" calibration_factor: ");
+    Serial.print(calibration_factor);
+    Serial.println();
+
+    now = rtc.now(); 
+    printTime(now);
+
+   
+  val = analogRead(A0);    
+  if ((val >= 500) && (val <= 750)) {     
+    lcd.setCursor(0,1);  
+    setFeedHour();     
+    delay(1000);    
+  }
+  
+  now = rtc.now();   
+  printTime(now);
+  
+  delay(2000);
+
+  if ((feedHour == now.hour()) && (feedMin == now.minute()) && foodTime) {    
+    if (distancia <= 17 && distancia >=1){     
+      if (scale.get_units()>=0 && scale.get_units()<=5){     
+        digitalWrite(led_red,LOW);                         
+        feed();             
+      }
+          
+      else if (scale.get_units()>=30 && scale.get_units()<=100){    
+        digitalWrite(led_red,LOW);               
+
+        lcd.clear();       
+        lcd.setCursor(0, 0);    
+        lcd.print(" :3 GATITOOO...");  
+        myDFPlayer.play(3); 
+        delay(22000); 
+          
+        lcd.clear();     
+            
+        delay(2000);
+
+        now = rtc.now();
+        printTime(now);
+
+        delay(2000);//5000
+      
+     }
+        
+    }
+    else if (distancia <= 30 && distancia >=18){   
+      if (scale.get_units()>=0 && scale.get_units()<=5){            
+         empty();             
+      }
+          
+      else if (scale.get_units()>=30 && scale.get_units()<=100){  
+        digitalWrite(led_red,LOW);                 
+
+        lcd.clear();        
+        lcd.setCursor(0, 0);   
+        lcd.print(" :3 GATITOOO...");  
+        myDFPlayer.play(3); 
+        delay(22000); 
+          
+        lcd.clear();       
+            
+        delay(2000);
+
+        now = rtc.now();
+        printTime(now);
+
+        delay(2000);//5000
+               
+     }
+
+   }
+      
+  }
+  if (feedMin != now.minute()) {      
+    foodTime = true;       
+  }
+  
+}
+
+void printTime(DateTime t) {    
+
+  lcd.setCursor(0, 0);    
+  lcd.print("H. actual: ");
+  hour = t.hour();
+  if (hour < 10) {   
+    h = "0" + String(hour);  
+  } else { 
+    h = String(hour);       
+  }
+  
+  lcd.print(h);     
+  lcd.print(':');   
+  
+  minute = t.minute();  
+  if (minute < 10) {   
+    m = "0" + String(minute);  
+  } else { 
+    m = String(minute);    
+  }
+  
+  lcd.print(m);    
+  
+
+  lcd.setCursor(0, 1);    
+  lcd.print("H. comida: ");
+  if (feedHour < 10) {    
+    h = "0" + String(feedHour);
+  } else {
+    h = String(feedHour); 
+  }
+  lcd.print(h);     
+  lcd.print(':');     
+  
+  if (feedMin < 10) {       
+    m = "0" + String(feedMin); 
+  } else { 
+    m = String(feedMin); 
+  }
+  lcd.print(m);    
+
+  return;
+
+}
+
+void setFeedHour() {     
+  
+  lcd.clear();     
+  lcd.setCursor(0, 0);  
+  lcd.print("Cambiar hora de");
+  lcd.setCursor(0, 1);    
+  lcd.print("servir: ");
+  
+  int hourAux = feedHour;     
+
+  while(true) {  
+  
+    lcd.setCursor(8, 1);     
+    if (hourAux < 10) {       
+      lcd.print("0");
+      lcd.print(hourAux);
+    } else { 
+      lcd.print(hourAux); 
+    }
+    lcd.setCursor(10, 1);   
+    lcd.print(':');
+    lcd.setCursor(11, 1);  
+    if (feedMin < 10) {     
+      m = "0" + String(feedMin); 
+    } else { 
+      m = String(feedMin); 
+    }
+    lcd.print(m);
+
+    delay(200);
+
+    
+    val=analogRead(A0);     
+    
+    if ((val>=50) && (val<=150)) {      
+      hourAux = (hourAux + 1) % 24;       
+      
+    } else if ((val>=150) && (val<=300)) {    
+      hourAux = hourAux - 1;         
+      if (hourAux < 0) {
+        hourAux = 23;              
+      }
+    }
+    else if ((val>=300)&&(val<=500)) {  
+      break;                     
+    }
+    if ((val>=0)&&(val<=50)) {    
+      feedHour = hourAux;       
+      setFeedMin();          
+      break;
+    }
+    
+  }  
+  
+  return;
+  
+}
+
+void setFeedMin() {         
+
+  lcd.clear();      
+  lcd.setCursor(0, 0);  
+  lcd.print("Cambiar min. de");
+  lcd.setCursor(0, 1);
+  lcd.print("servir: ");
+  
+  int minAux = feedMin;    
+  
+  while(true) {       
+
+    lcd.setCursor(8, 1);     
+    if (feedHour < 10) { 
+      h = "0" + String(feedHour); 
+    } else { 
+      h = String(feedHour);
+    }
+    
+    lcd.print(h);      
+    lcd.setCursor(10, 1);     
+    lcd.print(':');
+    lcd.setCursor(11, 1);    
+    if (minAux < 10) {
+      m = "0" + String(minAux);     
+    } else {
+      m = String(minAux);     
+    }
+    lcd.print(m);     
+    
+    delay(200);
+
+    
+    val = analogRead(A0);     
+    if((val>=50) && (val<=150)) {   
+      minAux = (minAux + 1) % 60;       
+      
+    } else if((val>=150) && (val<=300)) {       
+      minAux = minAux - 1;        
+      if (minAux < 0) {
+        minAux = 59;
+      }
+    } else if((val>=300) && (val<=500)) {     
+      break;           
+      
+    } else if((val>=500) &&( val<=750)) {    
+      feedMin = minAux;         
+      break;
+    }
+        
+  }
+  
+  return;
+  
+}
+
+void feed() {           
+  
+   digitalWrite(led_red,LOW);                 
+   digitalWrite(led_green,HIGH);                
+   lcd.clear();        
+   lcd.setCursor(0, 0);      
+   lcd.print(" DISPENSANDO...");      
+   servo();     
+          
+   lcd.setCursor(0, 1);    
+   lcd.print(" :3 GATITOOO...");  
+   myDFPlayer.play(3);    
+   delay(5000);    
+          
+   lcd.clear();       
+   lcd.setCursor(0, 0);        
+   lcd.print(" DISPENSANDO...");      
+   lcd.setCursor(0, 1);    
+   lcd.print(" :3 GATITOOO...");  
+   delay(20000);     
+          
+   delay(5000);
+
+   now = rtc.now();
+   printTime(now);
+
+   delay(5000);
+
+   foodTime = false;   
+}
+
+
+void empty(){      
+  
+  digitalWrite(led_red,HIGH);                
+  digitalWrite(led_green,LOW);                 
+      
+  myDFPlayer.play(1);  
+      
+  lcd.clear();  
+  lcd.print("Llene el tanque¡¡"); 
+  delay(50000);
+
+  delay(5000);
+
+  now = rtc.now();
+  printTime(now);
+
+  delay(5000);
+        
+  foodTime = false;   
+}
+
+
+void servo() {       
+
+     myservo.attach(servoPin);     
+   
+    for (pos = 90; pos <= 270; pos += 10) {    
+        myservo.write(pos);     
+    
+        delay(15);    
+    }
+
+    delay(1000);
+    
+    for (pos = 270; pos >= 90; pos -= 10) {     
+       myservo.write(pos);      
+       delay(15);    
+    }
+  
+    delay(3000);
+  
+    myservo.detach();   
+
+}
+  
